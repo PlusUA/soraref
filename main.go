@@ -13,24 +13,30 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-const (
-	apiURL = "https://api.sorare.com/graphql" // Sorare GraphQL API URL
-	apiKey = ""                               // Ваш API-ключ
-)
+const apiURL = "https://api.sorare.com/graphql"
+
+// Config представляет структуру файла конфигурации
+type Config struct {
+	APIKey string `json:"api_key"`
+}
 
 // GraphQLQuery представляет структуру запроса
 type GraphQLQuery struct {
 	Query string `json:"query"`
 }
 
-// CardResponse представляет структуру ответа API
+// CardResponse представляет структуру ответа API для карт
 type CardResponse struct {
 	Data struct {
 		User struct {
 			Cards struct {
 				Nodes []struct {
-					AssetID string `json:"assetId"`
-					Slug    string `json:"slug"`
+					AssetID  string  `json:"assetId"`
+					Slug     string  `json:"slug"`
+					Name     string  `json:"name"`
+					Position string  `json:"position"`
+					PriceEUR float64 `json:"priceEUR"`
+					OnSale   bool    `json:"onSale"`
 				} `json:"nodes"`
 			} `json:"cards"`
 		} `json:"user"`
@@ -38,6 +44,12 @@ type CardResponse struct {
 }
 
 func main() {
+	// Загружаем конфигурацию
+	config, err := loadConfig("config.json")
+	if err != nil {
+		log.Fatalf("Ошибка загрузки конфигурации: %v", err)
+	}
+
 	// Открываем файл users.txt
 	file, err := os.Open("users.txt")
 	if err != nil {
@@ -65,6 +77,10 @@ func main() {
 	excelFile.SetCellValue(sheetName, "A1", "UserSlug")
 	excelFile.SetCellValue(sheetName, "B1", "AssetID")
 	excelFile.SetCellValue(sheetName, "C1", "CardSlug")
+	excelFile.SetCellValue(sheetName, "D1", "Name")
+	excelFile.SetCellValue(sheetName, "E1", "Position")
+	excelFile.SetCellValue(sheetName, "F1", "PriceEUR")
+	excelFile.SetCellValue(sheetName, "G1", "OnSale")
 
 	row := 2
 
@@ -73,7 +89,7 @@ func main() {
 		fmt.Printf("Обрабатываем пользователя: %s\n", userSlug)
 
 		// Выполняем запрос к API
-		cards, err := fetchUserCards(userSlug)
+		cards, err := fetchUserCards(config.APIKey, userSlug)
 		if err != nil {
 			log.Printf("Ошибка при получении данных для %s: %v", userSlug, err)
 			continue
@@ -84,6 +100,10 @@ func main() {
 			excelFile.SetCellValue(sheetName, fmt.Sprintf("A%d", row), userSlug)
 			excelFile.SetCellValue(sheetName, fmt.Sprintf("B%d", row), card.AssetID)
 			excelFile.SetCellValue(sheetName, fmt.Sprintf("C%d", row), card.Slug)
+			excelFile.SetCellValue(sheetName, fmt.Sprintf("D%d", row), card.Name)
+			excelFile.SetCellValue(sheetName, fmt.Sprintf("E%d", row), card.Position)
+			excelFile.SetCellValue(sheetName, fmt.Sprintf("F%d", row), card.PriceEUR)
+			excelFile.SetCellValue(sheetName, fmt.Sprintf("G%d", row), card.OnSale)
 			row++
 		}
 	}
@@ -96,10 +116,29 @@ func main() {
 	fmt.Println("Данные успешно сохранены в UserCards.xlsx")
 }
 
-// fetchUserCards выполняет запрос к Sorare API и возвращает список карт
-func fetchUserCards(userSlug string) ([]struct {
-	AssetID string `json:"assetId"`
-	Slug    string `json:"slug"`
+// loadConfig загружает конфигурацию из JSON-файла
+func loadConfig(filename string) (*Config, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var config Config
+	if err := json.NewDecoder(file).Decode(&config); err != nil {
+		return nil, err
+	}
+	return &config, nil
+}
+
+// fetchUserCards выполняет запрос к Sorare API и возвращает список карт с характеристиками
+func fetchUserCards(apiKey, userSlug string) ([]struct {
+	AssetID  string  `json:"assetId"`
+	Slug     string  `json:"slug"`
+	Name     string  `json:"name"`
+	Position string  `json:"position"`
+	PriceEUR float64 `json:"priceEUR"`
+	OnSale   bool    `json:"onSale"`
 }, error) {
 	// Формируем GraphQL-запрос
 	query := fmt.Sprintf(`
@@ -109,6 +148,10 @@ func fetchUserCards(userSlug string) ([]struct {
 					nodes {
 						assetId
 						slug
+						name
+						position
+						priceEUR
+						onSale
 					}
 				}
 			}
